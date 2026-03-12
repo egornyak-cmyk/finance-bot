@@ -1,3 +1,5 @@
+from dbm import sqlite3
+
 from telegram import ReplyKeyboardMarkup,Update
 from telegram.ext import ApplicationBuilder,MessageHandler,CommandHandler,filters,ContextTypes
 from datetime import datetime
@@ -16,7 +18,7 @@ menu = ReplyKeyboardMarkup([
 ["📊 Статистика","📊 Месяцы"],
 ["📈 Доход vs Расход","🏆 Топ"],
 ["💳 Баланс","📜 История"],
-["📁 Excel"]
+["📁 Excel","🆕 Новый месяц"]
 ], resize_keyboard=True)
 
 
@@ -73,6 +75,18 @@ async def excel(update:Update,context:ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_document(open(file,"rb"))
 
+    import sqlite3
+
+def reset_month():
+
+    conn = sqlite3.connect("finance.db")
+    cursor = conn.cursor()
+
+    cursor.execute("DELETE FROM transactions")
+
+    conn.commit()
+    conn.close()
+
 
 async def text_handler(update:Update,context:ContextTypes.DEFAULT_TYPE):
 
@@ -93,6 +107,12 @@ async def text_handler(update:Update,context:ContextTypes.DEFAULT_TYPE):
     # ИСТОРИЯ
     if text == "📜 История":
         await history(update,context)
+        return
+
+
+    if text == "🆕 Новый месяц":
+        reset_month()
+        await update.message.reply_text("Данные за прошлый месяц очищены")
         return
 
 

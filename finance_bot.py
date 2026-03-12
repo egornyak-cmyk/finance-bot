@@ -213,6 +213,7 @@ def backup_db():
 scheduler = BackgroundScheduler()
 scheduler.add_job(backup_db,"interval",hours=24)
 scheduler.start()
+
 def monthly_job():
 
     for user_id in ALLOWED_USERS:
@@ -230,7 +231,7 @@ def monthly_job():
 
 scheduler = BackgroundScheduler()
 
-# запуск раз в месяц
+# запуск отчёта 1 числа каждого месяца
 scheduler.add_job(
     monthly_job,
     "cron",
@@ -239,5 +240,8 @@ scheduler.add_job(
 )
 
 scheduler.start()
+
+
+print("BOT STARTED")
 
 app.run_polling()

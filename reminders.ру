@@ -1,0 +1,30 @@
+from apscheduler.schedulers.background import BackgroundScheduler
+import sqlite3
+
+conn = sqlite3.connect("finance.db",check_same_thread=False)
+cursor = conn.cursor()
+
+def check_installments(bot):
+
+    cursor.execute("SELECT user_id,name,amount,date FROM installments")
+
+    rows = cursor.fetchall()
+
+    for r in rows:
+
+        text=f"Напоминание о рассрочке\n{r[1]} — {r[2]}"
+
+        bot.send_message(r[0],text)
+
+def start_scheduler(bot):
+
+    scheduler=BackgroundScheduler()
+
+    scheduler.add_job(
+    check_installments,
+    "interval",
+    days=1,
+    args=[bot]
+    )
+
+    scheduler.start()

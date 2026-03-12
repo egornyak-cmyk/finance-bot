@@ -4,17 +4,20 @@ from datetime import datetime
 
 from config import TOKEN,ALLOWED_USERS
 from database import add_transaction,get_balance,get_last_transactions
-from stats import generate_stats
+from stats import generate_stats, monthly_stats, income_vs_expense, top_categories
 from excel_export import export_excel
 
+from monthly_report import generate_month_report
+from apscheduler.schedulers.background import BackgroundScheduler
 
-menu=ReplyKeyboardMarkup([
+
+menu = ReplyKeyboardMarkup([
 ["💰 Доход","💸 Расход"],
-["🏺 Банки","🤝 Долги"],
-["💳 Рассрочка","📊 Статистика"],
-["📁 Excel","💳 Баланс"],
-["📜 История"]
-],resize_keyboard=True)
+["📊 Статистика","📊 Месяцы"],
+["📈 Доход vs Расход","🏆 Топ"],
+["💳 Баланс","📜 История"],
+["📁 Excel"]
+], resize_keyboard=True)
 
 
 def allowed(user_id):
@@ -73,54 +76,111 @@ async def excel(update:Update,context:ContextTypes.DEFAULT_TYPE):
 
 async def text_handler(update:Update,context:ContextTypes.DEFAULT_TYPE):
 
-    user_id=update.effective_user.id
+    user_id = update.effective_user.id
 
     if not allowed(user_id):
         return
 
-    text=update.message.text
+    text = update.message.text
 
 
-    if text=="💳 Баланс":
+    # БАЛАНС
+    if text == "💳 Баланс":
         await balance(update,context)
         return
 
-    if text=="📜 История":
+
+    # ИСТОРИЯ
+    if text == "📜 История":
         await history(update,context)
         return
 
-    if text=="📊 Статистика":
-        await stats(update,context)
+
+    # КРУГОВАЯ СТАТИСТИКА
+    if text == "📊 Статистика":
+
+        img = generate_stats(user_id)
+
+        if img:
+            await update.message.reply_photo(open(img,"rb"))
+        else:
+            await update.message.reply_text("Нет данных")
+
         return
 
-    if text=="📁 Excel":
-        await excel(update,context)
+
+    # ГРАФИК ПО МЕСЯЦАМ
+    if text == "📊 Месяцы":
+
+        img = monthly_stats(user_id)
+
+        if img:
+            await update.message.reply_photo(open(img,"rb"))
+        else:
+            await update.message.reply_text("Нет данных")
+
         return
 
 
-    parts=text.split()
+    # ДОХОД VS РАСХОД
+    if text == "📈 Доход vs Расход":
 
-    if len(parts)==2:
+        img = income_vs_expense(user_id)
+
+        if img:
+            await update.message.reply_photo(open(img,"rb"))
+        else:
+            await update.message.reply_text("Нет данных")
+
+        return
+
+
+    # ТОП КАТЕГОРИЙ
+    if text == "🏆 Топ":
+
+        result = top_categories(user_id)
+
+        if result:
+            await update.message.reply_text(result)
+        else:
+            await update.message.reply_text("Нет данных")
+
+        return
+
+
+    # EXCEL
+    if text == "📁 Excel":
+
+        file = export_excel(user_id)
+
+        await update.message.reply_document(open(file,"rb"))
+
+        return
+
+
+    # ДОБАВЛЕНИЕ РАСХОДА
+    parts = text.split()
+
+    if len(parts) == 2:
 
         try:
 
-            if parts[0].isdigit():
+            if parts[0].replace('.', '', 1).isdigit():
 
-                amount=float(parts[0])
-                category=parts[1]
+                amount = float(parts[0])
+                category = parts[1]
 
             else:
 
-                category=parts[0]
-                amount=float(parts[1])
-
+                category = parts[0]
+                amount = float(parts[1])
 
             add_transaction(
-            user_id,
-            "expense",
-            category,
-            amount,
-            str(datetime.now())
+                user_id,
+                "expense",
+                category,
+                amount,
+                str(datetime.now())
             )
 
             await update.message.reply_text("Добавлено")
@@ -135,5 +195,49 @@ app.add_handler(CommandHandler("start",start))
 app.add_handler(MessageHandler(filters.TEXT,text_handler))
 
 print("BOT STARTED")
+import os
+from apscheduler.schedulers.background import BackgroundScheduler
+
+def backup_db():
+
+    file = "finance.db"
+
+    if os.path.exists(file):
+
+        app.bot.send_document(
+            chat_id=ALLOWED_USERS[0],
+            document=open(file,"rb"),
+            caption="Автобэкап базы"
+        )
+
+scheduler = BackgroundScheduler()
+scheduler.add_job(backup_db,"interval",hours=24)
+scheduler.start()
+def monthly_job():
+
+    for user_id in ALLOWED_USERS:
+
+        report = generate_month_report(user_id)
+
+        try:
+            app.bot.send_message(
+                chat_id=user_id,
+                text=report
+            )
+        except:
+            pass
+
+
+scheduler = BackgroundScheduler()
+
+# запуск раз в месяц
+scheduler.add_job(
+    monthly_job,
+    "cron",
+    day=1,
+    hour=10
+)
+
+scheduler.start()
 
 app.run_polling()

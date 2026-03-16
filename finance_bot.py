@@ -11,6 +11,7 @@ from monthly_report import generate_month_report
 from apscheduler.schedulers.background import BackgroundScheduler
 
 
+# --- Кнопки ---
 menu = ReplyKeyboardMarkup([
 ["💰 Доход","💸 Расход"],
 ["📊 Статистика","📊 Месяцы"],
@@ -20,10 +21,16 @@ menu = ReplyKeyboardMarkup([
 ], resize_keyboard=True)
 
 
+# --- Доступ ---
 def allowed(user_id):
     return user_id in ALLOWED_USERS
 
 
+# --- Состояние ввода (доход/расход) ---
+user_state = {}
+
+
+# --- Сброс месяца ---
 def reset_month():
     conn = sqlite3.connect("finance.db")
     cursor = conn.cursor()
@@ -32,8 +39,8 @@ def reset_month():
     conn.close()
 
 
-async def start(update:Update,context:ContextTypes.DEFAULT_TYPE):
-
+# --- Команда старт ---
+async def start(update:Update, context:ContextTypes.DEFAULT_TYPE):
     if not allowed(update.effective_user.id):
         return
 
@@ -43,14 +50,14 @@ async def start(update:Update,context:ContextTypes.DEFAULT_TYPE):
     )
 
 
-async def balance(update:Update,context:ContextTypes.DEFAULT_TYPE):
-
+# --- Баланс ---
+async def balance(update:Update, context:ContextTypes.DEFAULT_TYPE):
     bal = get_balance(update.effective_user.id)
+    await update.message.reply_text(f"Баланс: {round(bal,2)}")
 
-    await update.message.reply_text(f"Баланс: {bal}")
 
-
-async def history(update:Update,context:ContextTypes.DEFAULT_TYPE):
+# --- История ---
+async def history(update:Update, context:ContextTypes.DEFAULT_TYPE):
 
     rows = get_last_transactions(update.effective_user.id)
 
@@ -61,15 +68,14 @@ async def history(update:Update,context:ContextTypes.DEFAULT_TYPE):
     text = ""
 
     for r in rows:
-
-        sign = "+" if r[0]=="income" else "-"
-
+        sign = "+" if r[0] == "income" else "-"
         text += f"{sign}{r[2]} {r[1]}\n"
 
     await update.message.reply_text(text)
 
 
-async def text_handler(update:Update,context:ContextTypes.DEFAULT_TYPE):
+# --- Основной обработчик сообщений ---
+async def text_handler(update:Update, context:ContextTypes.DEFAULT_TYPE):
 
     user_id = update.effective_user.id
 
@@ -79,16 +85,32 @@ async def text_handler(update:Update,context:ContextTypes.DEFAULT_TYPE):
     text = update.message.text
 
 
+    # --- Выбор режима ---
+    if text == "💰 Доход":
+        user_state[user_id] = "income"
+        await update.message.reply_text("Введите сумму и категорию\nпример: 6894.33 зарплата")
+        return
+
+
+    if text == "💸 Расход":
+        user_state[user_id] = "expense"
+        await update.message.reply_text("Введите сумму и категорию\nпример: 120 еда")
+        return
+
+
+    # --- Баланс ---
     if text == "💳 Баланс":
         await balance(update,context)
         return
 
 
+    # --- История ---
     if text == "📜 История":
         await history(update,context)
         return
 
 
+    # --- Круговая статистика ---
     if text == "📊 Статистика":
 
         img = generate_stats(user_id)
@@ -101,6 +123,7 @@ async def text_handler(update:Update,context:ContextTypes.DEFAULT_TYPE):
         return
 
 
+    # --- Месячный график ---
     if text == "📊 Месяцы":
 
         img = monthly_stats(user_id)
@@ -113,6 +136,7 @@ async def text_handler(update:Update,context:ContextTypes.DEFAULT_TYPE):
         return
 
 
+    # --- Доход vs расход ---
     if text == "📈 Доход vs Расход":
 
         img = income_vs_expense(user_id)
@@ -125,6 +149,7 @@ async def text_handler(update:Update,context:ContextTypes.DEFAULT_TYPE):
         return
 
 
+    # --- Топ расходов ---
     if text == "🏆 Топ":
 
         result = top_categories(user_id)
@@ -135,6 +160,7 @@ async def text_handler(update:Update,context:ContextTypes.DEFAULT_TYPE):
         return
 
 
+    # --- Excel отчёт ---
     if text == "📁 Excel":
 
         file = export_excel(user_id)
@@ -144,15 +170,17 @@ async def text_handler(update:Update,context:ContextTypes.DEFAULT_TYPE):
         return
 
 
+    # --- Новый месяц ---
     if text == "🆕 Новый месяц":
 
         reset_month()
 
-        await update.message.reply_text("Данные за прошлый месяц очищены")
+        await update.message.reply_text("База очищена. Новый месяц начат.")
 
         return
 
 
+    # --- Добавление операции ---
     parts = text.split()
 
     if len(parts) == 2:
@@ -169,9 +197,11 @@ async def text_handler(update:Update,context:ContextTypes.DEFAULT_TYPE):
                 category = parts[0]
                 amount = float(parts[1])
 
+            transaction_type = user_state.get(user_id, "expense")
+
             add_transaction(
                 user_id,
-                "expense",
+                transaction_type,
                 category,
                 amount,
                 str(datetime.now())
@@ -183,6 +213,7 @@ async def text_handler(update:Update,context:ContextTypes.DEFAULT_TYPE):
             pass
 
 
+# --- Ежемесячный отчёт ---
 def monthly_job():
 
     for user_id in ALLOWED_USERS:
@@ -198,12 +229,14 @@ def monthly_job():
             pass
 
 
+# --- Запуск бота ---
 app = ApplicationBuilder().token(TOKEN).build()
 
 app.add_handler(CommandHandler("start",start))
 app.add_handler(MessageHandler(filters.TEXT,text_handler))
 
 
+# --- Планировщик ---
 scheduler = BackgroundScheduler()
 
 scheduler.add_job(

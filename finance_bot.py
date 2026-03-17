@@ -75,129 +75,115 @@ async def history(update:Update, context:ContextTypes.DEFAULT_TYPE):
 
 
 # --- Основной обработчик сообщений ---
-async def text_handler(update:Update, context:ContextTypes.DEFAULT_TYPE):
+async def text_handler(update:Update,context:ContextTypes.DEFAULT_TYPE):
 
-    user_id = update.effective_user.id
+    tg_id = update.effective_user.id
+    name = update.effective_user.first_name
 
-    if not allowed(user_id):
+    if not allowed(tg_id):
         return
+
+    user_id = 1   # ОБЩИЙ БАЛАНС
 
     text = update.message.text
 
 
-    # --- Выбор режима ---
+    # ВЫБОР РЕЖИМА
     if text == "💰 Доход":
-        user_state[user_id] = "income"
-        await update.message.reply_text("Введите сумму и категорию\nпример: 6894.33 зарплата")
+        user_state[tg_id] = "income"
+        await update.message.reply_text("Введите сумму и категорию\nпример: 6894 зарплата")
         return
 
-
     if text == "💸 Расход":
-        user_state[user_id] = "expense"
+        user_state[tg_id] = "expense"
         await update.message.reply_text("Введите сумму и категорию\nпример: 120 еда")
         return
 
 
-    # --- Баланс ---
+    # БАЛАНС
     if text == "💳 Баланс":
-        await balance(update,context)
+        bal = get_balance(user_id)
+        await update.message.reply_text(f"Баланс: {round(bal,2)}")
         return
 
 
-    # --- История ---
+    # ИСТОРИЯ
     if text == "📜 История":
-        await history(update,context)
+
+        rows = get_last_transactions(user_id)
+
+        if not rows:
+            await update.message.reply_text("История пустая")
+            return
+
+        text_out = ""
+
+        for r in rows:
+            sign = "+" if r[0]=="income" else "-"
+            text_out += f"{sign}{r[2]} {r[1]}\n"
+
+        await update.message.reply_text(text_out)
         return
 
 
-    # --- Круговая статистика ---
+    # СТАТИСТИКА
     if text == "📊 Статистика":
-
         img = generate_stats(user_id)
-
         if img:
             await update.message.reply_photo(open(img,"rb"))
-        else:
-            await update.message.reply_text("Нет данных")
-
         return
 
 
-    # --- Месячный график ---
     if text == "📊 Месяцы":
-
         img = monthly_stats(user_id)
-
         if img:
             await update.message.reply_photo(open(img,"rb"))
-        else:
-            await update.message.reply_text("Нет данных")
-
         return
 
 
-    # --- Доход vs расход ---
     if text == "📈 Доход vs Расход":
-
         img = income_vs_expense(user_id)
-
         if img:
             await update.message.reply_photo(open(img,"rb"))
-        else:
-            await update.message.reply_text("Нет данных")
-
         return
 
 
-    # --- Топ расходов ---
     if text == "🏆 Топ":
-
         result = top_categories(user_id)
-
         if result:
             await update.message.reply_text(result)
-
         return
 
 
-    # --- Excel отчёт ---
+    # EXCEL
     if text == "📁 Excel":
-
         file = export_excel(user_id)
-
         await update.message.reply_document(open(file,"rb"))
-
         return
 
 
-    # --- Новый месяц ---
+    # НОВЫЙ МЕСЯЦ
     if text == "🆕 Новый месяц":
-
         reset_month()
-
         await update.message.reply_text("База очищена. Новый месяц начат.")
-
         return
 
 
-    # --- Добавление операции ---
+    # ДОБАВЛЕНИЕ
     parts = text.split()
 
-    if len(parts) == 2:
+    if len(parts) >= 2:
 
         try:
 
             if parts[0].replace('.', '', 1).isdigit():
-
                 amount = float(parts[0])
-                category = parts[1]
-
+                category = " ".join(parts[1:])
             else:
+                category = " ".join(parts[:-1])
+                amount = float(parts[-1])
 
-                category = parts[0]
-                amount = float(parts[1])
-
-            transaction_type = user_state.get(user_id, "expense")
+            transaction_type = user_state.get(tg_id, "expense")
 
             add_transaction(
                 user_id,
@@ -207,10 +193,14 @@ async def text_handler(update:Update, context:ContextTypes.DEFAULT_TYPE):
                 str(datetime.now())
             )
 
-            await update.message.reply_text("Добавлено")
+            action = "доход" if transaction_type == "income" else "расход"
+
+            await update.message.reply_text(
+                f"{name} добавил {action}: {amount} {category}"
+            )
 
         except:
-            pass
+            await update.message.reply_text("Ошибка ввода")
 
 
 # --- Ежемесячный отчёт ---
